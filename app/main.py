@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from app.routers import chat, sessions, agent  # sessions 必须在这里
+import asyncio
+import sys
 
 app = FastAPI(
     title="LYAITEST AI测试平台",
@@ -18,3 +20,6 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
