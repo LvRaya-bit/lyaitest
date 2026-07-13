@@ -1,49 +1,64 @@
 ﻿# app/services/report_service.py
+# 报告服务：将测试报告存入 SQLite 数据库
+
 import uuid
-import logging
 from datetime import datetime
-from typing import List, Optional
-from app.models.report import TestReport
+from app.database import get_connection
 
-logger = logging.getLogger(__name__)
+def save_report(report_data: dict):
+    """保存测试报告到 SQLite"""
+    report_id = str(uuid.uuid4())[:8]
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        INSERT INTO reports (
+            id, session_id, test_type, url, status_code,
+            response_time, title, screenshot, error, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        report_id,
+        report_data.get("session_id", "unknown"),
+        report_data.get("test_type", "unknown"),
+        report_data.get("url", ""),
+        report_data.get("status_code"),
+        report_data.get("response_time"),
+        report_data.get("title"),
+        report_data.get("screenshot"),
+        report_data.get("error"),
+        datetime.now().isoformat()
+    ))
+    
+    conn.commit()
+    conn.close()
+    return report_id
 
-# 内存存储（项目重启会丢失，后续可换数据库）
-reports_store: list = []
-
-def save_report(report_data: dict) -> TestReport:
-    """保存测试报告"""
-    try:
-        report = TestReport(
-            id=str(uuid.uuid4())[:8],
-            session_id=report_data.get("session_id", "unknown"),
-            test_type=report_data.get("test_type", "unknown"),
-            url=report_data.get("url", ""),
-            status_code=report_data.get("status_code"),
-            response_time=report_data.get("response_time"),
-            title=report_data.get("title"),
-            screenshot=report_data.get("screenshot"),
-            error=report_data.get("error"),
-            created_at=datetime.now()
-        )
-        reports_store.append(report)
-        logger.info(f"[save_report] 成功保存报告 id={report.id}, store_len={len(reports_store)}, store_id={id(reports_store)}")
-        return report
-    except Exception as e:
-        logger.error(f"[save_report] 保存报告失败: {e}, report_data={report_data}")
-        raise
-
-def get_reports_by_session(session_id: str) -> List[TestReport]:
-    """获取某个会话的所有测试报告"""
-    return [r for r in reports_store if r.session_id == session_id]
-
-def get_all_reports() -> List[TestReport]:
+def get_all_reports():
     """获取所有测试报告"""
-    logger.info(f"[get_all_reports] 当前报告数量: {len(reports_store)}, store_id={id(reports_store)}")
-    return reports_store
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM reports ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 
-def get_report_by_id(report_id: str) -> Optional[TestReport]:
-    """根据ID获取报告"""
-    for r in reports_store:
-        if r.id == report_id:
-            return r
-    return None
+def get_reports_by_session(session_id: str):
+    """根据会话ID获取报告"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM reports WHERE session_id = ? ORDER BY created_at DESC",
+        (session_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def get_report_by_id(report_id: str):
+    """根据报告ID获取单条报告"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM reports WHERE id = ?", (report_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
