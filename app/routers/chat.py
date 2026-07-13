@@ -4,7 +4,6 @@ from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
 import os
 from dotenv import load_dotenv
-
 from app.storage import messages_store
 
 load_dotenv()
@@ -18,12 +17,20 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
 
+# llm = ChatOpenAI(
+#     model="deepseek-chat",
+#     openai_api_key=os.getenv("DEEPSEEK_API_KEY"),
+#     openai_api_base="https://api.deepseek.com",
+#     temperature=0.3
+# )
 llm = ChatOpenAI(
-    model="deepseek-chat",
-    openai_api_key=os.getenv("DEEPSEEK_API_KEY"),
-    openai_api_base="https://api.deepseek.com",
+    model="glm-4",  # 可选 glm-4 / glm-4-plus / glm-4.7 / glm-5
+    openai_api_key=os.getenv("ZHIPU_API_KEY"),
+    openai_api_base="https://open.bigmodel.cn/api/paas/v4/",
     temperature=0.3
 )
+
+
 
 # ========== 普通接口（一次性返回） ==========
 @router.post("/", response_model=ChatResponse)

@@ -1,4 +1,4 @@
-# app/run_web_test_script.py
+﻿# app/run_web_test_script.py
 import sys
 import json
 import time
@@ -23,7 +23,7 @@ def main():
             result["title"] = page.title()
             
             timestamp = int(time.time())
-            screenshot_path = f"screenshot_{timestamp}.png"
+            screenshot_path = f"C:\\Users\\CJTX\\AppData\\Local\\Temp\\screenshot_{timestamp}.png"
             page.screenshot(path=screenshot_path, full_page=True)
             result["screenshot"] = screenshot_path
             

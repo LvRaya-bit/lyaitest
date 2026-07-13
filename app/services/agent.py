@@ -1,4 +1,4 @@
-"""
+﻿"""
 LYAITEST Agent 核心模块
 基于 LangGraph 构建的测试智能体，支持意图识别和工具调用
 """
@@ -7,13 +7,14 @@ from langgraph.graph import StateGraph, END
 from typing import TypedDict
 from langchain_openai import ChatOpenAI
 import os
-import time
 import requests
 from dotenv import load_dotenv
-from playwright.sync_api import sync_playwright
-import threading
 import subprocess
 import json
+from app.services.report_service import save_report
+import time
+import threading
+from playwright.sync_api import sync_playwright
 
 load_dotenv()
 
@@ -30,16 +31,24 @@ class AgentState(TypedDict):
     """
     messages: list           # [{"role": "user", "content": "..."}, ...]
     next_step: str           # "generate_case" | "run_api_test" | "run_web_test" | "chat"
+    session_id: str          # 新增：会话ID，用于报告关联
 
 # ============================================
 # 第2部分：模型初始化
 # ============================================
+# llm = ChatOpenAI(
+#     model="deepseek-chat",
+#     openai_api_key=os.getenv("DEEPSEEK_API_KEY"),
+#     openai_api_base="https://api.deepseek.com",
+#     temperature=0.3
+# )
 llm = ChatOpenAI(
-    model="deepseek-chat",
-    openai_api_key=os.getenv("DEEPSEEK_API_KEY"),
-    openai_api_base="https://api.deepseek.com",
+    model="glm-4",  # 可选 glm-4 / glm-4-plus / glm-4.7 / glm-5
+    openai_api_key=os.getenv("ZHIPU_API_KEY"),
+    openai_api_base="https://open.bigmodel.cn/api/paas/v4/",
     temperature=0.3
 )
+
 
 # ============================================
 # 第3部分：节点函数（Node）
@@ -150,6 +159,19 @@ def run_api_test(state: AgentState):
         else:
             response = requests.get(url, timeout=10)
         
+        # ===== 新增：保存测试报告 =====
+        save_report({
+            "session_id": state.get("session_id", "unknown"),
+            "test_type": "api",
+            "url": url,
+            "status_code": response.status_code,
+            "response_time": response.elapsed.total_seconds(),
+            "title": None,
+            "screenshot": None,
+            "error": None if response.status_code < 400 else f"状态码 {response.status_code}"
+        })
+        # ===== 保存结束 =====
+
         # 构建测试结果
         result = f"""
 🧪 接口测试结果：
@@ -178,6 +200,18 @@ def run_api_test(state: AgentState):
             "content": f"❌ 请求超时：{url} 响应超过 10 秒"
         })
     except Exception as e:
+                # ===== 新增：保存错误报告 =====
+        save_report({
+            "session_id": state.get("session_id", "unknown"),
+            "test_type": "api",
+            "url": url,
+            "status_code": None,
+            "response_time": None,
+            "title": None,
+            "screenshot": None,
+            "error": str(e)
+        })
+        # ===== 保存结束 =====
         state["messages"].append({
             "role": "assistant",
             "content": f"❌ 测试失败：{str(e)}"
@@ -187,9 +221,6 @@ def run_api_test(state: AgentState):
     return state
 
 # ---------- 节点4：执行 Web 自动化测试 ----------
-import time
-import threading
-from playwright.sync_api import sync_playwright
 
 def run_web_test(state: AgentState):
     """执行 Web 自动化测试（通过子进程调用独立脚本）"""
@@ -212,15 +243,30 @@ def run_web_test(state: AgentState):
         return state
     
     try:
-        # 调用独立脚本
+        # 调用独立脚本（使用相对路径）
+        import sys
+        script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "run_web_test_script.py")
         result_str = subprocess.run(
-            ["python", "app/run_web_test_script.py", url],
+            [sys.executable, script_path, url],
             capture_output=True,
             text=True,
             timeout=60
         ).stdout
         
         result = json.loads(result_str.strip())
+        
+        # ===== 保存测试报告 =====
+        save_report({
+            "session_id": state.get("session_id", "unknown"),
+            "test_type": "web",
+            "url": url,
+            "status_code": result.get("status"),
+            "response_time": None,
+            "title": result.get("title"),
+            "screenshot": result.get("screenshot"),
+            "error": result.get("error")
+        })
+        # ===== 保存结束 =====
         
         if result.get("error"):
             state["messages"].append({
@@ -234,14 +280,26 @@ def run_web_test(state: AgentState):
 🌐 Web 自动化测试结果：
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📍 URL: {url}
-📊 状态码: {result['status']}
-📄 页面标题: {result['title']}
-📸 截图已保存: {result['screenshot']}
+📊 状态码: {result.get('status')}
+📄 页面标题: {result.get('title')}
+📸 截图已保存: {result.get('screenshot')}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✅ 测试完成
 """
             })
     except Exception as e:
+        # ===== 保存错误报告 =====
+        save_report({
+            "session_id": state.get("session_id", "unknown"),
+            "test_type": "web",
+            "url": url,
+            "status_code": None,
+            "response_time": None,
+            "title": None,
+            "screenshot": None,
+            "error": str(e)
+        })
+        # ===== 保存结束 =====
         state["messages"].append({
             "role": "assistant",
             "content": f"❌ Web 测试失败：{str(e)}"
@@ -315,7 +373,7 @@ def build_agent():
 # ============================================
 agent = build_agent()
 
-def run_agent(user_message: str) -> str:
+def run_agent(user_message: str, session_id: str = "unknown") -> str:
     """
     运行 Agent，返回最终回答
     
@@ -324,7 +382,8 @@ def run_agent(user_message: str) -> str:
     """
     initial_state = {
         "messages": [{"role": "user", "content": user_message}],
-        "next_step": ""
+        "next_step": "",
+        "session_id": session_id  # 新增
     }
     result = agent.invoke(initial_state)
     
