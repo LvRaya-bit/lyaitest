@@ -34,7 +34,10 @@ if "selected_report" not in st.session_state:
 # ============================================
 # 4. 后端 API 地址
 # ============================================
-API_BASE = "http://localhost:8000/api/v1"   # 后端服务地址
+# 本地开发
+#API_BASE = "http://localhost:8000/api/v1"   # 后端服务地址
+# 生产环境（替换成你的 Render URL）
+API_BASE = "https://lyaitest.onrender.com/api/v1"
 
 # ============================================
 # 5. 侧边栏（左侧面板）
